@@ -1,6 +1,5 @@
 # Sensitive Information and Environment Variables
 .env
-
 # Python Cache and Build Files
 __pycache__/
 *.pyc
