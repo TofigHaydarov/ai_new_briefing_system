@@ -7,10 +7,11 @@ from typing import Any
 
 import numpy as np
 import pytest
+import respx
 
 from ai.providers.base import LLMProvider, EmbeddingProvider
 from ai.schemas import Article
-
+from httpx import Response
 
 class FakeLLM(LLMProvider):
     """Returns a fixed JSON response. No network."""
