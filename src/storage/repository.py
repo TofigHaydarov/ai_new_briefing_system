@@ -10,7 +10,7 @@ class UserProfile(BaseModel):
     max_items_per_topic: int
     @classmethod
     def from_dict(cls,data:dict):
-        return cls(data.get("user"),data.get("preferred_topics",[]),data.get("excluded_sources",[]),data.get("max_items_per_topic",3))
+        return cls(user = data.get("user",''), preferred_topics = data.get("preferred_topics",[]), excluded_sources = data.get("excluded_sources",[]), max_items_per_topic =data.get("max_items_per_topic",3))
         
 
     
