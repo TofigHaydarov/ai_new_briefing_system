@@ -4,13 +4,44 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+import tenacity
 
 pytestmark = pytest.mark.asyncio  # requires pytest-asyncio (or asyncio_mode=auto in pytest.ini)
 
 
+@pytest.fixture(autouse=True)
+def no_retry_delay():
+    """Same rationale as in test_services.py: AIService's retry decorators
+    use wait_exponential, which would make this test genuinely sleep for
+    seconds if a retry is ever triggered. Zero it out for the test run.
+    """
+    from src.services.ai_service import AIService
+
+    original_summarize_wait = AIService.safe_summarize.retry.wait
+    original_embed_wait = AIService.safe_embed.__wrapped__.retry.wait
+
+    AIService.safe_summarize.retry.wait = tenacity.wait_none()
+    AIService.safe_embed.__wrapped__.retry.wait = tenacity.wait_none()
+
+    yield
+
+    AIService.safe_summarize.retry.wait = original_summarize_wait
+    AIService.safe_embed.__wrapped__.retry.wait = original_embed_wait
+
+
+@pytest.fixture(autouse=True)
+def clear_ai_cache():
+    """Same rationale as in test_services.py: safe_embed's lru_cache
+    persists across tests unless cleared."""
+    from src.services.ai_service import AIService
+
+    AIService.safe_embed.cache_clear()
+    yield
+    AIService.safe_embed.cache_clear()
+
+
 async def test_daily_digest_happy_path(
-    fake_llm,
-    fake_embedder,
+    monkeypatch,
     fake_source_client,
     fake_repository,
     sample_user,
@@ -22,20 +53,34 @@ async def test_daily_digest_happy_path(
       1. FetchService pulls 3 sources through FakeSourceClient — one RSS
          feed, its near-duplicate mirror, and one scraped HTML page.
       2. Dedup collapses the mirror pair down to 2 unique stories.
-      3. AIService labels each survivor via FakeLLM (fixed JSON payload).
+      3. AIService labels each survivor — summarize_and_label is
+         monkeypatched, since AIService calls it as a module-level
+         function rather than accepting it via constructor injection.
       4. Topic/source filtering keeps only what the user wants.
       5. The digest is built and written through FakeRepository, landing
          as a real file in digests_dir.
     """
     # --- under test: adjust these imports/constructors to your real classes ---
+    from src.services import ai_service as ai_service_module
     from src.services.ai_service import AIService
     from src.services.fetch_service import FetchService
     from src.core.dedup import Deduplicator
     from src.core.digest_builder import build_digest
+    from ai.schemas import LabeledSummary, Topic, Sentiment
 
     fetch_service = FetchService(client=fake_source_client)
-    ai_service = AIService(llm=fake_llm, embedder=fake_embedder)
     deduplicator = Deduplicator(threshold=0.7)
+
+    # Deterministic fake labeling: "processor" articles -> Tech, else Science.
+    def fake_summarize_and_label(article):
+        topic = Topic.TECH if "processor" in article.title.lower() else Topic.SCIENCE
+        return LabeledSummary(
+            summary=f"Summary of: {article.title}",
+            topic=topic,
+            sentiment=Sentiment.NEUTRAL,
+        )
+
+    monkeypatch.setattr(ai_service_module, "summarize_and_label", fake_summarize_and_label)
 
     sources = [
         "https://example.com/rss/feed1",
@@ -51,12 +96,12 @@ async def test_daily_digest_happy_path(
     unique_articles = deduplicator.deduplicate(articles)
     assert len(unique_articles) == 2
 
-    # 3. Label each survivor via the injected FakeLLM
-    labeled = [(a, ai_service.summarize_and_label(a)) for a in unique_articles]
-    assert fake_llm.calls, "expected the (fake) LLM to actually be invoked"
+    # 3. Label each survivor via the (monkeypatched) AIService
+    labeled = [(a, AIService.safe_summarize(a)) for a in unique_articles]
     assert all(ls.topic for _, ls in labeled)
 
     # 4. Filter to the user's preferred topics / excluded sources
+    #    (Topic is a str Enum, so `Topic.TECH in ["Tech", ...]` works fine.)
     relevant = [
         (a, ls)
         for a, ls in labeled
