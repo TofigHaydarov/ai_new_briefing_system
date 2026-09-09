@@ -14,3 +14,4 @@ google-genai>=0.3.0    ; extra == "gemini"
 # Smoke tests
 pytest>=8.0
 pytest-asyncio
+tenacity
