@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     JSON_STORAGE_PATH: Path = Field(default=Path("data/user_profile.json"))
     DIGEST_OUTPUT_DIR: Path = Field(default=Path("digests"))
 
-    DEDUP_SIMILARITY_THRESHOLD :int = Field(default=0.85)
+    DEDUP_SIMILARITY_THRESHOLD :float = Field(default=0.85)
     MAX_CONCURRENT_REQUESTS: int = Field(default=5)
     REQUEST_TIMEOUT_SECONDS: int = Field(default=15)
 

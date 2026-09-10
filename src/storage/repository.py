@@ -10,11 +10,12 @@ class UserProfile(BaseModel):
     max_items_per_topic: int
     @classmethod
     def from_dict(cls,data:dict):
-        return cls(user = data.get("user",''), preferred_topics = data.get("preferred_topics",[]), excluded_sources = data.get("excluded_sources",[]), max_items_per_topic =data.get("max_items_per_topic",3))
-        
+        return cls(user = data.get("user",''), preferred_topics = data.get("preferred_topics",[]), excluded_sources = data.get("excluded_sources",[]), max_items_per_topic = data.get("max_items_per_topic",3))
+    def __str__(self):
+        return f"Name:{self.user}\n Preferred Topics:{self.preferred_topics}\n Excluded sources:{self.excluded_sources}\n"
 
     
-class JSONUserRepo():
+class JSONUserRepo:
 
     def __init__(self,file_path:Path):
         self.file_path = file_path
