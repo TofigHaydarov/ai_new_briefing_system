@@ -28,14 +28,14 @@ class ArticleDeduplicator:
             logger.debug(f"Duplicate found (URL match): {canon_url}")
             return True
             
-        c_hash = content_hash(article.text)
+        c_hash = content_hash(article.content)
         if c_hash in self.seen_hashes:
             logger.debug(f"Duplicate found (Hash match): {article.title}")
             return True
 
         # PASS 2: Semantic pass (Contextual similarity check)
         for accepted in self.accepted_articles:
-            if near_duplicate(article.text, accepted.text, threshold=self.semantic_threshold):
+            if near_duplicate(article.content, accepted.content, threshold=self.semantic_threshold):
                 logger.debug(f"Semantic duplicate found: '{article.title}' is similar to '{accepted.title}'")
                 return True
 
