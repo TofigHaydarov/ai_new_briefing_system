@@ -30,3 +30,4 @@ class Settings(BaseSettings):
     )
 
 settings = Settings()
+print(settings.DIGEST_OUTPUT_DIR)
