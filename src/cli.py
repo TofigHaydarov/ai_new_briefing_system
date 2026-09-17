@@ -4,28 +4,38 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import asyncio
 from typing import List, Optional
 import typer
+import logging
 from storage.repository import JSONUserRepo, UserProfile
-from config import settings
+from src.config import settings
 from src.services.briefing_service import generate_user_digest
-from ai.llm import summarize_and_label
-from ai.schemas import Article, LabeledSummary,DigestItem,Digest
-import os
-from dotenv import load_dotenv
+from ai.schemas import Article, Digest
+import datetime
 
-load_dotenv()
-
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+)
+logger = logging.getLogger("cli")
 
 app = typer.Typer(help="AI News Briefing System CLI")
 repo = JSONUserRepo(settings.JSON_STORAGE_PATH)
 
+GEMINI_API_KEY = settings.GEMINI_API_KEY
+
 @app.command(name="get-profile")
 def show_profile(username: str = typer.Argument(..., help="Username to retrieve")):
+    logger.info(f"Fetching profile for user: '{username}'")
     profile = asyncio.run(repo.get_profile(username))
+    
     if not profile:
-        print(f"ERROR: Profile for user '{username}' not found.")
+        logger.error(f"Profile for user '{username}' not found.")
+        typer.echo(f"ERROR: Profile for user '{username}' not found.", err=True)
         raise typer.Exit(code=1)
-    print(str(profile))
+        
+    logger.debug(f"Retrieved profile payload: {profile}")
+    typer.echo(str(profile))
+
+
 @app.command(name="create-profile")
 def add_user(
     username: str = typer.Option(..., "--user", "-u", help="Username / User ID"),
@@ -33,20 +43,34 @@ def add_user(
     excluded: List[str] = typer.Option([], "--excluded", "-e", help="Excluded sources/domains"),
     max_items: int = typer.Option(3, "--max-items", "-m", help="Max articles per topic"),
 ):
-    profile = UserProfile(user=username,preferred_topics=topics,excluded_sources=excluded,max_items_per_topic=max_items)
-    if not profile:
-            print("Invalid parameters.")
-            raise typer.Exit(code=1)
-    asyncio.run(repo.save_profile(profile))
-    print("Profile Saved Successfully!")
+    logger.info(f"Attempting to create profile for user: '{username}'")
+    try:
+        profile = UserProfile(
+            user=username,
+            preferred_topics=topics,
+            excluded_sources=excluded,
+            max_items_per_topic=max_items
+        )
+        asyncio.run(repo.save_profile(profile))
+        logger.info(f"Profile successfully saved for user: '{username}'")
+        typer.echo("Profile Saved Successfully!")
+    except Exception as err:
+        logger.error(f"Failed to create profile for '{username}': {err}")
+        typer.echo(f"ERROR: Invalid parameters or failure saving profile: {err}", err=True)
+        raise typer.Exit(code=1)
+
+
 @app.command(name="list-users")
 def list_users():
+    logger.info("Listing all registered user profiles.")
     profiles = asyncio.run(repo.get_all_profiles())
 
     if not profiles:
+        logger.warning("No user profiles found in storage repository.")
         typer.echo("No user profiles found in storage.")
         return
 
+    logger.info(f"Successfully retrieved {len(profiles)} profile(s).")
     typer.echo(f"Found {len(profiles)} user profile(s):")
     for profile in profiles:
         typer.echo(f" - {profile.user} (Topics: {', '.join(profile.preferred_topics)})")
@@ -56,17 +80,40 @@ def list_users():
 def delete_profile(
     username: str = typer.Option(..., "--user", "-u", help="Username to delete")
 ):
+    logger.info(f"Attempting to delete profile for user: '{username}'")
     deleted = asyncio.run(repo.delete_profile(username))
 
     if not deleted:
+        logger.error(f"Deletion failed: User '{username}' not found.")
         typer.echo(f"ERROR: Could not delete profile. User '{username}' not found.", err=True)
         raise typer.Exit(code=1)
 
+    logger.info(f"Successfully deleted user profile: '{username}'")
     typer.echo(f"Successfully deleted profile for '{username}'.")
+def _render_markdown_digest(digest: Digest) -> str:
+    date_str = digest.generated_at.strftime("%Y-%m-%d %H:%M UTC")
+    lines = [
+        f"# Daily AI News Digest for {digest.user}",
+        f"_Generated on {date_str}_\n",
+        "---",
+    ]
 
+    grouped = digest.by_topic()
+    if not grouped:
+        lines.append("\n*No articles match your preference profile today.*")
 
+    for topic, items in grouped.items():
+        lines.append(f"\n## Topic: {topic.value}\n")
+        for item in items:
+            lines.append(f"### {item.article.title}")
+            lines.append(f"Source: {item.article.source} | Sentiment: {item.labeled.sentiment.value.capitalize()}")
+            lines.append(f"URL: {item.article.url}\n")
+            lines.append(f"{item.labeled.summary}\n")
+
+    return "\n".join(lines)
 
 @app.command(name="generate-briefing")
+@app.command(name="run-daily")
 def generate_briefing(
     username: Optional[str] = typer.Option(
         None, "--user", "-u", help="Target username for briefing generation"
@@ -75,11 +122,13 @@ def generate_briefing(
         False, "--all", "-a", help="Generate briefings for all registered users"
     ),
 ):
+   
     if not username and not run_all:
+        logger.error("Neither --user nor --all flag was provided.")
         typer.echo("ERROR: Please specify a user using --user <username> or pass --all.", err=True)
         raise typer.Exit(code=1)
 
-    # the following is to be replaced with web-scraper output
+
     sample_articles = [
         Article(
             title="New AI Model Released",
@@ -89,50 +138,52 @@ def generate_briefing(
         )
     ]
 
-    profiles = []
-    if run_all:
-        profiles = asyncio.run(repo.get_all_profiles())
-    else:
-        user_profile = asyncio.run(repo.get_profile(username))
-        if user_profile:
-            profiles.append(user_profile)
+    async def _process_user(profile) -> None:
+        logger.info(f"Processing briefing pipeline for '{profile.user}'...")
+        digest = await generate_user_digest(profile, sample_articles)
+        
+        md_content = _render_markdown_digest(digest)
+        
+        date_prefix = digest.generated_at.strftime("%Y-%m-%d")
+        settings.DIGEST_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+        output_file = settings.DIGEST_OUTPUT_DIR / f"{date_prefix}-{profile.user}.md"
+        
+        output_file.write_text(md_content, encoding="utf-8")
+        logger.info(f"Saved briefing for '{profile.user}' to {output_file}")
+        typer.echo(f"  [+] Briefing generated for '{profile.user}': {output_file}")
+
+    async def _runner():
+        if run_all:
+            profiles = await repo.get_all_user_profiles()
+            if not profiles:
+                typer.echo("No user profiles found.", err=True)
+                return
+            await asyncio.gather(*[_process_user(p) for p in profiles])
         else:
-            typer.echo(f"ERROR: User '{username}' not found.", err=True)
-            raise typer.Exit(code=1)
+            profile = await repo.get_profile(username)
+            if not profile:
+                logger.error(f"User profile '{username}' not found.")
+                typer.echo(f"ERROR: User '{username}' not found.", err=True)
+                raise typer.Exit(code=1)
+            await _process_user(profile)
 
-    
-    settings.DIGEST_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-
-    for profile in profiles:
-        typer.echo(f"Processing briefing for '{profile.user}'...")
-        
-        digest = asyncio.run(generate_user_digest(profile, sample_articles))
-
-        output_path = settings.DIGEST_OUTPUT_DIR / f"{profile.user}_latest.json"
-        output_path.write_text(digest.model_dump_json(indent=2), encoding="utf-8")
-        
-        typer.echo(f"  [+] Saved {len(digest.items)} digest items to {output_path}")
+    asyncio.run(_runner())
 
 
 @app.command(name="get-briefing")
 def get_briefing(
-    username: str = typer.Option(..., "--user", "-u", help="Username to view latest briefing for")
+    username: str = typer.Option(..., "--user", "-u", help="Username to retrieve briefing for"),
+    date_str: Optional[str] = typer.Option(None, "--date", "-d", help="Date in YYYY-MM-DD format (defaults to today)")
 ):
-    """View the latest generated briefing digest file for a given user."""
-    # Assumes digests are saved under settings.DIGESTS_DIR / {username}_latest.json
-    digest_file = settings.DIGESTS_DIR / f"{username}_latest.json"
+    target_date = date_str or asyncio.run(asyncio.sleep(0) or datetime.now().strftime("%Y-%m-%d"))
+    digest_file = settings.DIGEST_OUTPUT_DIR / f"{target_date}-{username}.md"
 
     if not digest_file.exists():
-        typer.echo(f"ERROR: No briefing digest found for '{username}' at path '{digest_file}'.", err=True)
+        logger.warning(f"Digest file missing: {digest_file}")
+        typer.echo(f"ERROR: No briefing digest found for '{username}' on date {target_date}.", err=True)
         raise typer.Exit(code=1)
 
-    try:
-        content = digest_file.read_text(encoding="utf-8")
-        typer.echo(content)
-    except Exception as err:
-        typer.echo(f"ERROR: Failed to read briefing file: {err}", err=True)
-        raise typer.Exit(code=1)
-
+    typer.echo(digest_file.read_text(encoding="utf-8"))
     
 if __name__ == "__main__":
     app()

@@ -6,7 +6,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 from ai.llm import summarize_and_label
 from ai.embedding import embed
 from ai.schemas import Article, LabeledSummary
-
+from config import settings
 # Setup structured logging for this module
 logger = logging.getLogger(__name__)
 
