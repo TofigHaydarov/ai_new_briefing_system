@@ -9,10 +9,10 @@ from storage.repository import JSONUserRepo, UserProfile
 from src.config import settings
 from src.services.briefing_service import generate_user_digest
 from ai.schemas import Article, Digest
-import datetime
+from datetime import datetime
 
 logging.basicConfig(
-    level=logging.INFO,
+    level=settings.LOG_LEVEL,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
 )
 logger = logging.getLogger("cli")
@@ -20,7 +20,6 @@ logger = logging.getLogger("cli")
 app = typer.Typer(help="AI News Briefing System CLI")
 repo = JSONUserRepo(settings.JSON_STORAGE_PATH)
 
-GEMINI_API_KEY = settings.GEMINI_API_KEY
 
 @app.command(name="get-profile")
 def show_profile(username: str = typer.Argument(..., help="Username to retrieve")):
@@ -154,7 +153,7 @@ def generate_briefing(
 
     async def _runner():
         if run_all:
-            profiles = await repo.get_all_user_profiles()
+            profiles = await repo.get_all_profiles()
             if not profiles:
                 typer.echo("No user profiles found.", err=True)
                 return

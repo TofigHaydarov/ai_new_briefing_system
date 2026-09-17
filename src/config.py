@@ -4,15 +4,14 @@ from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-
 class Settings(BaseSettings):
     LLM_PROVIDER: str = Field(default="gemini")
-    LLM_MODEL: str = Field(default="gemini-1.5-flash")
+    LLM_MODEL: str = Field(default="gemini-3.5-flash")
     
     GOOGLE_API_KEY: str = Field(default="")
     GEMINI_API_KEY: str = Field(default="")
     LLM_API_KEY: str = Field(default="")
-    
+    LOG_LEVEL: str = Field(default="INFO")
     EMBEDDING_PROVIDER: str = Field(default="gemini")
     EMBEDDING_MODEL: str = Field(default="text-embedding-004")
     EMBEDDING_API_KEY: str = Field(default="")
@@ -39,3 +38,4 @@ os.environ["LLM_PROVIDER"] = settings.LLM_PROVIDER
 os.environ["LLM_MODEL"] = settings.LLM_MODEL
 os.environ["EMBEDDING_PROVIDER"] = settings.EMBEDDING_PROVIDER
 os.environ["EMBEDDING_MODEL"] = settings.EMBEDDING_MODEL
+#print(settings.GOOGLE_API_KEY,'-')
