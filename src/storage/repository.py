@@ -66,6 +66,3 @@ class JSONUserRepo:
         data[profile.user] = profile.model_dump(by_alias=True)
         with open(self.file_path, "w") as f:
             json.dump(data, f,indent = 4)
-test_repo = JSONUserRepo(Path(__file__).parent.parent / "data" / "user_profile.json")
-test_profile = UserProfile(user="", preferred_topics=[], excluded_sources=[], max_items_per_topic=3)
-asyncio.run(test_repo.save_profile(test_profile))
