@@ -1,13 +1,14 @@
 import asyncio
 import aiohttp
-
+from types import SimpleNamespace
 
 class FakeResponse:
-    def __init__(self, status, body, tracker=None, delay=0.0):
+    def __init__(self, status, body, tracker=None, delay=0.0, url="https://example.com/fake"):
         self.status = status
         self._body = body
         self._tracker = tracker
         self._delay = delay
+        self._url = url
 
     async def __aenter__(self):
         return self
@@ -17,7 +18,10 @@ class FakeResponse:
 
     def raise_for_status(self):
         if self.status >= 400:
-            raise aiohttp.ClientResponseError(request_info=None, history=(), status=self.status)
+            request_info = SimpleNamespace(real_url=self._url)
+            raise aiohttp.ClientResponseError(
+                request_info=request_info, history=(), status=self.status
+            )
 
     async def text(self):
         if self._tracker is not None:
@@ -28,6 +32,8 @@ class FakeResponse:
         if self._tracker is not None:
             self._tracker["active"] -= 1
         return self._body
+
+
 
 
 class FakeSession:
@@ -43,17 +49,17 @@ class FakeSession:
         self.calls = []
 
     def get(self, url, timeout=None):
-        self.calls.append(url)
-        if url not in self._responses:
-            raise aiohttp.ClientConnectionError(f"No fake response configured for {url}")
+    self.calls.append(url)
+    if url not in self._responses:
+        raise aiohttp.ClientConnectionError(f"No fake response configured for {url}")
 
-        attempt = self._attempts.get(url, 0) + 1
-        self._attempts[url] = attempt
-        if attempt <= self._fail_times:
-            raise aiohttp.ClientConnectionError("Simulated transient failure")
+    attempt = self._attempts.get(url, 0) + 1
+    self._attempts[url] = attempt
+    if attempt <= self._fail_times:
+        raise aiohttp.ClientConnectionError("Simulated transient failure")
 
-        status, body = self._responses[url]
-        return FakeResponse(status, body, tracker=self._tracker, delay=self._delay)
+    status, body = self._responses[url]
+    return FakeResponse(status, body, tracker=self._tracker, delay=self._delay, url=url)
 
 
 class FakeClientSessionCM:

@@ -3,7 +3,7 @@ import pytest
 from tenacity import wait_none
 
 from src.concurrency import pipeline
-from tests.test_helpers import FakeSession, patch_client_session
+from tests.helpers import FakeSession, patch_client_session
 
 
 @pytest.fixture(autouse=True)
