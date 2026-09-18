@@ -19,20 +19,33 @@ def patch_providers(monkeypatch, fake_llm, fake_embedder):
 
 @pytest.fixture(autouse=True)
 def clear_ai_cache():
-    AIService.safe_embed.cache_clear()
+    if hasattr(AIService.safe_embed, "cache_clear"):
+        AIService.safe_embed.cache_clear()
     yield
-    AIService.safe_embed.cache_clear()
+    if hasattr(AIService.safe_embed, "cache_clear"):
+        AIService.safe_embed.cache_clear()
 
 
 @pytest.fixture(autouse=True)
 def fast_retry():
-    summarize_wait = AIService.safe_summarize.retry.wait
-    embed_wait = AIService.safe_embed.__wrapped__.retry.wait
-    AIService.safe_summarize.retry.wait = wait_none()
-    AIService.safe_embed.__wrapped__.retry.wait = wait_none()
+    summarize_retry = getattr(AIService.safe_summarize, "retry", None)
+    embed_retry = getattr(AIService.safe_embed, "__wrapped__", AIService.safe_embed)
+    embed_retry_obj = getattr(embed_retry, "retry", None)
+
+    summarize_wait = summarize_retry.wait if summarize_retry else None
+    embed_wait = embed_retry_obj.wait if embed_retry_obj else None
+
+    if summarize_retry:
+        summarize_retry.wait = wait_none()
+    if embed_retry_obj:
+        embed_retry_obj.wait = wait_none()
+
     yield
-    AIService.safe_summarize.retry.wait = summarize_wait
-    AIService.safe_embed.__wrapped__.retry.wait = embed_wait
+
+    if summarize_retry and summarize_wait:
+        summarize_retry.wait = summarize_wait
+    if embed_retry_obj and embed_wait:
+        embed_retry_obj.wait = embed_wait
 
 
 @pytest.fixture
@@ -50,7 +63,6 @@ def spy_summarize(monkeypatch):
 
 
 class TestSafeSummarizeCaching:
-    # Expected to fail until content_hash caching is added to safe_summarize.
 
     def test_identical_content_does_not_recall_llm(self, spy_summarize):
         article1 = make_article(content="Same body text.", url="https://example.com/1")
@@ -106,8 +118,6 @@ class TestSafeSummarizeRetryBehavior:
         assert state["n"] == 3
 
     def test_empty_content_raises_without_exhausting_retries(self, spy_summarize):
-        # Expected to fail until ValueError is excluded from the retry filter;
-        # currently retries 3 times before raising AIIntegrationError.
         with pytest.raises(AIIntegrationError):
             AIService.safe_summarize(make_article(content=""))
 
@@ -117,8 +127,6 @@ class TestSafeSummarizeRetryBehavior:
 class TestSafeEmbed:
 
     def test_returns_plain_list_not_ndarray(self):
-        # Expected to fail until safe_embed converts the provider's
-        # np.ndarray result to a plain list.
         result = AIService.safe_embed("Some text to embed.")
 
         assert isinstance(result, list)

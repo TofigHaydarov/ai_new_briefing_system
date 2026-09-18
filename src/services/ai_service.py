@@ -8,6 +8,7 @@ from ai.embedding import embed
 from ai.schemas import Article, LabeledSummary
 from ai.dedup import content_hash
 from ai.providers.base import ProviderError
+
 # Setup structured logging for this module
 logger = logging.getLogger(__name__)
 
