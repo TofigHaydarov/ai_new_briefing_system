@@ -1,6 +1,8 @@
 import asyncio
-import aiohttp
 from types import SimpleNamespace
+
+import aiohttp
+
 
 class FakeResponse:
     def __init__(self, status, body, tracker=None, delay=0.0, url="https://example.com/fake"):
@@ -34,8 +36,6 @@ class FakeResponse:
         return self._body
 
 
-
-
 class FakeSession:
     """In-memory aiohttp.ClientSession stand-in. Maps url -> (status, body).
     fail_times lets a url fail N times before succeeding, to simulate transient errors."""
@@ -49,17 +49,17 @@ class FakeSession:
         self.calls = []
 
     def get(self, url, timeout=None):
-    self.calls.append(url)
-    if url not in self._responses:
-        raise aiohttp.ClientConnectionError(f"No fake response configured for {url}")
+        self.calls.append(url)
+        if url not in self._responses:
+            raise aiohttp.ClientConnectionError(f"No fake response configured for {url}")
 
-    attempt = self._attempts.get(url, 0) + 1
-    self._attempts[url] = attempt
-    if attempt <= self._fail_times:
-        raise aiohttp.ClientConnectionError("Simulated transient failure")
+        attempt = self._attempts.get(url, 0) + 1
+        self._attempts[url] = attempt
+        if attempt <= self._fail_times:
+            raise aiohttp.ClientConnectionError("Simulated transient failure")
 
-    status, body = self._responses[url]
-    return FakeResponse(status, body, tracker=self._tracker, delay=self._delay, url=url)
+        status, body = self._responses[url]
+        return FakeResponse(status, body, tracker=self._tracker, delay=self._delay, url=url)
 
 
 class FakeClientSessionCM:
