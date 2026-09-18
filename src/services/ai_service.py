@@ -6,7 +6,6 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_not_e
 from ai.llm import summarize_and_label
 from ai.embedding import embed
 from ai.schemas import Article, LabeledSummary
-from config import settings
 from ai.dedup import content_hash
 
 # Setup structured logging for this module
@@ -15,6 +14,12 @@ logger = logging.getLogger(__name__)
 class AIIntegrationError(Exception):
     """Custom exception class for handling AI service failures gracefully."""
     pass
+
+def _log_and_raise_final_error(retry_state):
+    """Logs an ERROR only when all retries are exhausted, preventing log spam on every attempt."""
+    exc = retry_state.outcome.exception()
+    logger.error(f"Retries exhausted. Final AI Service error: {str(exc)}")
+    raise exc
 
 class AIService:
     # Cache dictionary for storing summaries based on article content hash
@@ -35,13 +40,13 @@ class AIService:
         result = AIService._execute_summarize(article)
         AIService._summary_cache[c_hash] = result
         return result
-    
+
     @staticmethod
     @retry(
         stop=stop_after_attempt(3), 
         wait=wait_exponential(multiplier=1, min=2, max=10),
-        retry=retry_if_not_exception_type(ValueError),  # Do not retry on ValueError, as it indicates a bad request
-        reraise=True
+        retry=retry_if_not_exception_type(ValueError),
+        retry_error_callback=_log_and_raise_final_error
     )
     def _execute_summarize(article: Article) -> LabeledSummary:
         """
@@ -57,7 +62,8 @@ class AIService:
             logger.error(f"Validation error for {article.url}: {str(ve)}")
             raise ve
         except Exception as e:
-            logger.error(f"Summarization failed for URL {article.url}: {str(e)}")
+            # Log as WARNING to avoid spamming the error logs on intermediate retries.
+            logger.warning(f"Summarization attempt failed (retrying...): {str(e)}")
             raise AIIntegrationError(f"LLM Summarization Error: {str(e)}") from e
 
     @staticmethod
@@ -65,8 +71,8 @@ class AIService:
     @retry(
         stop=stop_after_attempt(3), 
         wait=wait_exponential(multiplier=1, min=2, max=10),
-        reraise=True
-    )   
+        retry_error_callback=_log_and_raise_final_error
+    )
     def safe_embed(text: str) -> list[float]:
         """
         Generates embeddings for a given text.
@@ -83,5 +89,6 @@ class AIService:
                 return result.tolist()
             return result
         except Exception as e:
-            logger.error(f"Embedding failed: {str(e)}")
+            # Log as WARNING to avoid spamming the error logs on intermediate retries.
+            logger.warning(f"Embedding attempt failed (retrying...): {str(e)}")
             raise AIIntegrationError(f"Embedding Error: {str(e)}") from e
