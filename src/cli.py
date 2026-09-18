@@ -10,6 +10,8 @@ from src.config import settings
 from src.services.briefing_service import generate_user_digest
 from ai.schemas import Article, Digest
 from datetime import datetime
+from src.concurrency.pipeline import run_ingestion
+from urllib.parse import urlparse
 
 logging.basicConfig(
     level=settings.LOG_LEVEL,
@@ -127,19 +129,42 @@ def generate_briefing(
         typer.echo("ERROR: Please specify a user using --user <username> or pass --all.", err=True)
         raise typer.Exit(code=1)
 
+    """
+        articles = [
+            Article(
+                title="New AI Model Released",
+                url="https://techcrunch.com/example",
+                source="TechCrunch",
+                content="A ground-breaking AI model was announced today capable of...",
+            )
+        ]
+    """
+    
+    def _load_feed_urls() -> list[dict[str, str]]:
+        feed_file = Path("data/rss_feeds.txt")
 
-    sample_articles = [
-        Article(
-            title="New AI Model Released",
-            url="https://techcrunch.com/example",
-            source="TechCrunch",
-            content="A ground-breaking AI model was announced today capable of...",
-        )
-    ]
+        return [
+            {"url": line.strip(), "type": "rss"}
+            for line in feed_file.read_text(encoding="utf-8").splitlines()
+            if line.strip() and not line.startswith("#")
+        ]
+   
+    async def _get_articles() -> list[Article]:
+        records = await run_ingestion(_load_feed_urls())
 
-    async def _process_user(profile) -> None:
+        return [
+            Article(
+                title=record["title"],
+                url=record["url"],
+                source=urlparse(record["url"]).netloc,
+                content=record["content"],
+            )
+            for record in records
+        ]
+
+    async def _process_user(profile,articles) -> None:
         logger.info(f"Processing briefing pipeline for '{profile.user}'...")
-        digest = await generate_user_digest(profile, sample_articles)
+        digest = await generate_user_digest(profile, articles)
         
         md_content = _render_markdown_digest(digest)
         
@@ -150,21 +175,22 @@ def generate_briefing(
         output_file.write_text(md_content, encoding="utf-8")
         logger.info(f"Saved briefing for '{profile.user}' to {output_file}")
         typer.echo(f"  [+] Briefing generated for '{profile.user}': {output_file}")
-
     async def _runner():
+        articles = await _get_articles()
+        articles = articles[:30] #limiting articles to 10 for testing and performance purposes (free tier API resources get exhausted way too fast), can be adjusted as needed
         if run_all:
             profiles = await repo.get_all_profiles()
             if not profiles:
                 typer.echo("No user profiles found.", err=True)
                 return
-            await asyncio.gather(*[_process_user(p) for p in profiles])
+            await asyncio.gather(*[_process_user(p, articles) for p in profiles])
         else:
             profile = await repo.get_profile(username)
             if not profile:
                 logger.error(f"User profile '{username}' not found.")
                 typer.echo(f"ERROR: User '{username}' not found.", err=True)
                 raise typer.Exit(code=1)
-            await _process_user(profile)
+            await _process_user(profile, articles)
 
     asyncio.run(_runner())
 

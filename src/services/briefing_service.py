@@ -19,7 +19,7 @@ async def generate_user_digest(
     
     seen_canonical_urls: set[str] = set()
     seen_content_hashes: set[str] = set()
-    seen_embeddings: list[list[float]] = []
+    seen_contents: list[str] = []
 
     user_preferred_topics = {t.lower() for t in profile.preferred_topics}
     excluded_sources = {s.lower() for s in profile.excluded_sources}
@@ -38,21 +38,9 @@ async def generate_user_digest(
             continue
 
        
-        try:
-            curr_embedding = await asyncio.to_thread(AIService.safe_embed, article.content)
-            
-            is_near_dup = False
-            for prev_embedding in seen_embeddings:
-                if near_duplicate(curr_embedding, prev_embedding):
-                    is_near_dup = True
-                    break
-
-            if is_near_dup:
-                logger.info(f"Skipping near-duplicate (Semantic match): {article.title}")
-                continue
-
-        except AIIntegrationError as err:
-            logger.warning(f"Embedding failed for '{article.title}', skipping dedup check: {err}")
+        if any(near_duplicate(article.content, previous_content) for previous_content in seen_contents):
+            logger.info(f"Skipping near-duplicate (Semantic match): {article.title}")
+            continue
             
         try:
             labeled_summary = await asyncio.to_thread(AIService.safe_summarize, article)
@@ -73,8 +61,7 @@ async def generate_user_digest(
 
         seen_canonical_urls.add(canonical_url)
         seen_content_hashes.add(c_hash)
-        if 'curr_embedding' in locals() and curr_embedding:
-            seen_embeddings.append(curr_embedding)
+        seen_contents.append(article.content)
 
         digest_items.append(DigestItem(article=article, labeled=labeled_summary))
         topic_counts[topic] += 1

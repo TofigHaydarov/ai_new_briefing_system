@@ -9,7 +9,7 @@
         "excluded_sources": [
             "sponsored.example.com"
         ],
-        "max_items_per_topic": 3
+        "max_items_per_topic": 1
     },
     "testuser": {
         "user": "testuser",
