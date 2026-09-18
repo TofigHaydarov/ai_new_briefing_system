@@ -136,5 +136,3 @@ class AIService:
         async with AIService._llm_semaphore:
             return await asyncio.to_thread(AIService.safe_embed, text)
 
-
-
