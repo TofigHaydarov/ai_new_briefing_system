@@ -11,7 +11,7 @@ import pytest
 
 from ai.providers.base import LLMProvider, EmbeddingProvider
 from ai.schemas import Article
-
+from src.services.ai_service import AIService
 
 
 class FakeLLM(LLMProvider):
@@ -283,3 +283,28 @@ def user_profile_file(tmp_path: Path, sample_user: User) -> Path:
         )
     )
     return path
+@pytest.fixture(autouse=True)
+def reset_ai_service_state():
+    """
+    AIService.safe_summarize/_summary_cache and safe_embed's lru_cache both
+    persist across tests since they live on the class, not per-test state.
+    Without clearing them, one test's cached LabeledSummary/embedding can
+    leak into another test that expects a different FakeLLM payload.
+
+    Also disable tenacity's real sleep so retry/backoff tests run instantly
+    instead of actually waiting out the exponential backoff.
+    """
+    AIService._summary_cache.clear()
+    AIService.safe_embed.cache_clear()
+
+    original_summarize_wait = AIService.safe_summarize.retry.wait
+    original_embed_wait = AIService.safe_embed.retry.wait
+    AIService.safe_summarize.retry.wait = lambda retry_state: 0
+    AIService.safe_embed.retry.wait = lambda retry_state: 0
+
+    yield
+
+    AIService._summary_cache.clear()
+    AIService.safe_embed.cache_clear()
+    AIService.safe_summarize.retry.wait = original_summarize_wait
+    AIService.safe_embed.retry.wait = original_embed_wait

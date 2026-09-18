@@ -1,17 +1,16 @@
 import logging
-# Importing provided AI helper functions and schemas
-from ai.dedup import url_canonicalize, content_hash, near_duplicate
+from ai.dedup import url_canonicalize, content_hash, jaccard
 from ai.schemas import Article
 
 # Setup structured logging
 logger = logging.getLogger(__name__)
 
 class ArticleDeduplicator:
-    def __init__(self, semantic_threshold: float = 0.85):
+    def __init__(self, semantic_threshold: float = 0.7):
         """
         A two-stage deduplication system for articles.
         semantic_threshold: Threshold for semantic similarity. 
-        (0.85 is selected as optimal for project reporting to balance minor text edits and core meaning).
+        (0.7 is selected as optimal for project reporting to balance minor text edits and core meaning).
         """
         self.semantic_threshold = semantic_threshold
         self.seen_urls = set()
@@ -33,9 +32,14 @@ class ArticleDeduplicator:
             logger.debug(f"Duplicate found (Hash match): {article.title}")
             return True
 
-        # PASS 2: Semantic pass (Contextual similarity check)
+        # PASS 2: Semantic pass (Contextual similarity check using explicit Jaccard)
+        art_words = set(article.content.lower().split())
+        
         for accepted in self.accepted_articles:
-            if near_duplicate(article.content, accepted.content, threshold=self.semantic_threshold):
+            acc_words = set(accepted.content.lower().split())
+            
+            # Explicitly computing the score to guarantee our semantic_threshold is respected
+            if jaccard(art_words, acc_words) >= self.semantic_threshold:
                 logger.debug(f"Semantic duplicate found: '{article.title}' is similar to '{accepted.title}'")
                 return True
 
