@@ -135,3 +135,6 @@ class AIService:
         """Async counterpart to safe_embed, gated by the same LLM semaphore."""
         async with AIService._llm_semaphore:
             return await asyncio.to_thread(AIService.safe_embed, text)
+
+
+
