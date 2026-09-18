@@ -2,19 +2,24 @@ import json
 from pathlib import Path
 from typing import List, Optional
 from pydantic import BaseModel, Field
-
+import asyncio
 class UserProfile(BaseModel):
     user: str
     preferred_topics: List[str] = Field(default_factory=list)
     excluded_sources: List[str] = Field(default_factory=list)
     max_items_per_topic: int
+    
     @classmethod
     def from_dict(cls,data:dict):
-        return cls(user = data.get("user",''), preferred_topics = data.get("preferred_topics",[]), excluded_sources = data.get("excluded_sources",[]), max_items_per_topic =data.get("max_items_per_topic",3))
-        
-
+        if data=={}:
+            raise ValueError("Empty data provided for UserProfile")
+        return cls(user = data.get("user",''), preferred_topics = data.get("preferred_topics",[]), excluded_sources = data.get("excluded_sources",[]), max_items_per_topic = data.get("max_items_per_topic",3))
+    def __str__(self):
+        return f"Name:{self.user}\n Preferred Topics:{self.preferred_topics}\n Excluded sources:{self.excluded_sources}\n"
+    def __bool__(self) -> bool:
+        return bool(self.user and self.preferred_topics)
     
-class JSONUserRepo():
+class JSONUserRepo:
 
     def __init__(self,file_path:Path):
         self.file_path = file_path
@@ -23,7 +28,28 @@ class JSONUserRepo():
         if not self.file_path.exists():
             with open(self.file_path, "w", encoding="utf-8") as f:
                 json.dump({}, f)
-
+    async def get_all_profiles(self):
+        res = []
+        with open(self.file_path,'r') as f:
+            data = json.load(f)
+            res = [UserProfile.from_dict(data.get(user,{})) for user in data]
+        return res
+    async def delete_profile(self,user:str):
+        data = {}
+        with open(self.file_path,'r') as f:
+            try:
+                data = json.load(f)
+            except Exception:
+                print("Failed to load json")
+                return
+        if not (user in data):
+            return False
+        
+        del data[user]
+        with open(self.file_path,'w') as f:
+            json.dump(data, f,indent = 4)
+            return True
+    
     async def get_profile(self,name:str):
         with open(self.file_path,'r') as f:
             data = json.load(f)
@@ -31,6 +57,8 @@ class JSONUserRepo():
         return UserProfile.from_dict(user_data)
     
     async def save_profile(self,profile:UserProfile):
+        if not bool(profile):
+            raise ValueError("Invalid user profile: missing required fields.")
         with open(self.file_path,'r') as f:
             data = json.load(f)
         if "user" in data and isinstance(data["user"], str):
@@ -39,9 +67,3 @@ class JSONUserRepo():
         data[profile.user] = profile.model_dump(by_alias=True)
         with open(self.file_path, "w") as f:
             json.dump(data, f,indent = 4)
-"""
-userProf = UserProfile(user = "haji" ,preferred_topics= ["Football"],excluded_sources= ["Jews"] ,max_items_per_topic=5)
-
-userRepo = JSONUserRepo(Path("C:/Users/Haji/Desktop/SWE Project/ai_new_briefing_system/data/user_profile.json"))
-userRepo.save_profile(userProf)
-"""
