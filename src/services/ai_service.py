@@ -6,9 +6,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_not_e
 from ai.llm import summarize_and_label
 from ai.embedding import embed
 from ai.schemas import Article, LabeledSummary
-from ai.dedup import content_hash
-from ai.providers.base import ProviderError
-
+from src.config import settings
 # Setup structured logging for this module
 logger = logging.getLogger(__name__)
 
