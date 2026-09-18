@@ -174,7 +174,7 @@ def get_briefing(
     username: str = typer.Option(..., "--user", "-u", help="Username to retrieve briefing for"),
     date_str: Optional[str] = typer.Option(None, "--date", "-d", help="Date in YYYY-MM-DD format (defaults to today)")
 ):
-    target_date = date_str or asyncio.run(asyncio.sleep(0) or datetime.now().strftime("%Y-%m-%d"))
+    target_date = date_str or datetime.now().strftime("%Y-%m-%d")
     digest_file = settings.DIGEST_OUTPUT_DIR / f"{target_date}-{username}.md"
 
     if not digest_file.exists():
