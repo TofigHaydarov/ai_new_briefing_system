@@ -7,6 +7,7 @@ from ai.llm import summarize_and_label
 from ai.embedding import embed
 from ai.schemas import Article, LabeledSummary
 from ai.dedup import content_hash
+from ai.providers.base import ProviderError
 
 # Setup structured logging for this module
 logger = logging.getLogger(__name__)
@@ -45,7 +46,8 @@ class AIService:
     @retry(
         stop=stop_after_attempt(3), 
         wait=wait_exponential(multiplier=1, min=2, max=10),
-        retry=retry_if_not_exception_type(ValueError),
+        # Do not retry on ValueError (empty content) or ProviderError (schema/format issues)
+        retry=retry_if_not_exception_type((ValueError, ProviderError)),
         retry_error_callback=_log_and_raise_final_error
     )
     def _execute_summarize(article: Article) -> LabeledSummary:
@@ -54,12 +56,13 @@ class AIService:
         Does not retry on ValueError (e.g., empty content).
         """
         try:
-            logger.debug(f"Starting summarization for URL: {article.url} | Title: {article.title}")
+            logger.debug(f"Starting summarization for URL: {article.url}")
             result = summarize_and_label(article)
-            logger.info(f"Successfully summarized article: {article.url} | Assigned Topic: {result.topic}")
+            logger.info(f"Successfully summarized article: {article.url}")
             return result
-        except ValueError as ve:
-            logger.error(f"Validation error for {article.url}: {str(ve)}")
+        except (ValueError, ProviderError) as ve:
+            # Raise the original exception without masking it to satisfy test requirements
+            logger.error(f"Validation/Schema error for {article.url}: {str(ve)}")
             raise ve
         except Exception as e:
             # Log as WARNING to avoid spamming the error logs on intermediate retries.
@@ -71,6 +74,7 @@ class AIService:
     @retry(
         stop=stop_after_attempt(3), 
         wait=wait_exponential(multiplier=1, min=2, max=10),
+        retry=retry_if_not_exception_type((ValueError, ProviderError)),
         retry_error_callback=_log_and_raise_final_error
     )
     def safe_embed(text: str) -> list[float]:
@@ -88,6 +92,9 @@ class AIService:
             if hasattr(result, "tolist"):
                 return result.tolist()
             return result
+        except (ValueError, ProviderError) as ve:
+            logger.error(f"Validation/Schema error during embedding: {str(ve)}")
+            raise ve
         except Exception as e:
             # Log as WARNING to avoid spamming the error logs on intermediate retries.
             logger.warning(f"Embedding attempt failed (retrying...): {str(e)}")
