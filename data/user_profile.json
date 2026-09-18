@@ -10,5 +10,14 @@
             "sponsored.example.com"
         ],
         "max_items_per_topic": 3
+    },
+    "testuser": {
+        "user": "testuser",
+        "preferred_topics": [
+            "Tech",
+            "Science"
+        ],
+        "excluded_sources": [],
+        "max_items_per_topic": 3
     }
 }
