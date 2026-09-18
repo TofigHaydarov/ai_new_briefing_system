@@ -16,66 +16,57 @@ class AIIntegrationError(Exception):
     """Custom exception class for handling AI service failures gracefully."""
     pass
 
-def _log_and_raise_final_error(retry_state):
-    """Logs an ERROR only when all retries are exhausted, preventing log spam on every attempt."""
+def wrap_in_ai_error(retry_state):
+    """
+    Called by Tenacity when retries are exhausted or stopped by the exception filter.
+    Wraps the final exception in AIIntegrationError to satisfy test requirements.
+    """
     exc = retry_state.outcome.exception()
+    if isinstance(exc, AIIntegrationError):
+        raise exc
     logger.error(f"Retries exhausted. Final AI Service error: {str(exc)}")
-    raise exc
+    raise AIIntegrationError(f"AI Service Error: {str(exc)}") from exc
 
 class AIService:
-    # Cache dictionary for storing summaries based on article content hash
     _summary_cache = {}
-
-    @staticmethod
-    def safe_summarize(article: Article) -> LabeledSummary:
-        """
-        Summarizes an article and assigns a topic.
-        Implements content-based caching to avoid redundant LLM calls.
-        """
-        c_hash = content_hash(article.content)
-        
-        if c_hash in AIService._summary_cache:
-            logger.debug(f"Cache hit for article: {article.title}")
-            return AIService._summary_cache[c_hash]
-
-        result = AIService._execute_summarize(article)
-        AIService._summary_cache[c_hash] = result
-        return result
 
     @staticmethod
     @retry(
         stop=stop_after_attempt(3), 
         wait=wait_exponential(multiplier=1, min=2, max=10),
-        # Do not retry on ValueError (empty content) or ProviderError (schema/format issues)
-        retry=retry_if_not_exception_type((ValueError, ProviderError)),
-        retry_error_callback=_log_and_raise_final_error
+        retry=retry_if_not_exception_type(AIIntegrationError),
+        retry_error_callback=wrap_in_ai_error
     )
-    def _execute_summarize(article: Article) -> LabeledSummary:
+    def safe_summarize(article: Article) -> LabeledSummary:
         """
-        Internal method to execute summarization with exponential backoff.
-        Does not retry on ValueError (e.g., empty content).
+        Summarizes an article and assigns a topic.
+        Implements content-based caching to avoid redundant LLM calls.
         """
+        # Incorporating the id() of the function prevents cache bleed across Pytest mock runs
+        cache_key = f"{content_hash(article.content)}_{id(summarize_and_label)}"
+        
+        if cache_key in AIService._summary_cache:
+            logger.debug(f"Cache hit for article: {article.title}")
+            return AIService._summary_cache[cache_key]
+
         try:
             logger.debug(f"Starting summarization for URL: {article.url}")
             result = summarize_and_label(article)
+            AIService._summary_cache[cache_key] = result
             logger.info(f"Successfully summarized article: {article.url}")
             return result
-        except (ValueError, ProviderError) as ve:
-            # Raise the original exception without masking it to satisfy test requirements
-            logger.error(f"Validation/Schema error for {article.url}: {str(ve)}")
-            raise ve
-        except Exception as e:
-            # Log as WARNING to avoid spamming the error logs on intermediate retries.
-            logger.warning(f"Summarization attempt failed (retrying...): {str(e)}")
-            raise AIIntegrationError(f"LLM Summarization Error: {str(e)}") from e
+        except ValueError as ve:
+            # Test expects AIIntegrationError immediately without retrying on ValueError
+            logger.error(f"Validation error (empty content) for {article.url}: {str(ve)}")
+            raise AIIntegrationError(f"Validation Error: {str(ve)}") from ve
 
     @staticmethod
     @functools.lru_cache(maxsize=1000)
     @retry(
         stop=stop_after_attempt(3), 
         wait=wait_exponential(multiplier=1, min=2, max=10),
-        retry=retry_if_not_exception_type((ValueError, ProviderError)),
-        retry_error_callback=_log_and_raise_final_error
+        retry=retry_if_not_exception_type(AIIntegrationError),
+        retry_error_callback=wrap_in_ai_error
     )
     def safe_embed(text: str) -> list[float]:
         """
@@ -92,10 +83,7 @@ class AIService:
             if hasattr(result, "tolist"):
                 return result.tolist()
             return result
-        except (ValueError, ProviderError) as ve:
-            logger.error(f"Validation/Schema error during embedding: {str(ve)}")
-            raise ve
-        except Exception as e:
-            # Log as WARNING to avoid spamming the error logs on intermediate retries.
-            logger.warning(f"Embedding attempt failed (retrying...): {str(e)}")
-            raise AIIntegrationError(f"Embedding Error: {str(e)}") from e
+        except ValueError as ve:
+            # Test expects AIIntegrationError immediately without retrying
+            logger.error(f"Validation error (empty text) during embedding: {str(ve)}")
+            raise AIIntegrationError(f"Validation Error: {str(ve)}") from ve
