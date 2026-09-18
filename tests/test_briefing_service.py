@@ -1,13 +1,18 @@
 import pytest
-from datetime import datetime
+from datetime import datetime, timezone
 from types import MethodType
+
+from tenacity import wait_none
 
 from ai.schemas import Article
 from src.storage.repository import UserProfile
+from src.services.ai_service import AIService
 from src.services.briefing_service import generate_user_digest
 
 
-def make_article(title="Test Article", source="TechCrunch", content="Some content here.", url="https://example.com/1"):
+def make_article(title="Test Article", source="TechCrunch", content=None, url="https://example.com/1"):
+    if content is None:
+        content = f"Unique content for {title} at {url}."
     return Article(title=title, source=source, content=content, url=url)
 
 
@@ -36,13 +41,13 @@ def set_sequence(fake_llm, topics: list[str]):
     fake_llm.complete = MethodType(complete, fake_llm)
 
 
-def fail_on_call(fake_llm, call_index: int):
+def fail_for_content(fake_llm, content_marker: str):
+    """Makes the fake LLM always fail (every retry attempt) for any prompt
+    containing content_marker, and succeed normally otherwise."""
     original = fake_llm.complete
-    counter = {"n": 0}
 
     def complete(prompt, *, json_schema=None, max_tokens=1024):
-        counter["n"] += 1
-        if counter["n"] == call_index:
+        if content_marker in prompt:
             raise RuntimeError("Simulated LLM failure")
         return original(prompt, json_schema=json_schema, max_tokens=max_tokens)
 
@@ -50,9 +55,26 @@ def fail_on_call(fake_llm, call_index: int):
 
 
 @pytest.fixture(autouse=True)
-def patch_llm(monkeypatch, fake_llm):
+def patch_ai_providers(monkeypatch, fake_llm, fake_embedder):
     monkeypatch.setattr("ai.llm.get_llm", lambda: fake_llm)
-    return fake_llm
+    monkeypatch.setattr("ai.embedding.get_embedder", lambda: fake_embedder)
+
+    summarize_wait = AIService.safe_summarize.retry.wait
+    embed_wait = AIService.safe_embed.__wrapped__.retry.wait
+    AIService.safe_summarize.retry.wait = wait_none()
+    AIService.safe_embed.__wrapped__.retry.wait = wait_none()
+
+    yield fake_llm
+
+    AIService.safe_summarize.retry.wait = summarize_wait
+    AIService.safe_embed.__wrapped__.retry.wait = embed_wait
+
+
+@pytest.fixture(autouse=True)
+def clear_embed_cache():
+    AIService.safe_embed.cache_clear()
+    yield
+    AIService.safe_embed.cache_clear()
 
 
 class TestTopicFiltering:
@@ -112,11 +134,15 @@ class TestExcludedSources:
 
 class TestMaxItemsPerTopic:
     # Expected to fail until the topic_count/continue bug in briefing_service.py is fixed.
+    # Each article uses distinct content so dedup doesn't interfere with this check.
 
     async def test_limit_is_enforced(self, fake_llm):
         set_payload(fake_llm, topic="Tech")
         profile = make_profile(topics=["General"], max_items=2)
-        articles = [make_article(title=f"Article {i}", url=f"https://example.com/{i}") for i in range(5)]
+        articles = [
+            make_article(title=f"Article {i}", url=f"https://example.com/{i}", content=f"Content number {i}.")
+            for i in range(5)
+        ]
 
         digest = await generate_user_digest(profile, articles)
 
@@ -126,9 +152,11 @@ class TestMaxItemsPerTopic:
     async def test_limit_is_per_topic_not_global(self, fake_llm):
         profile = make_profile(topics=["General"], max_items=2)
         articles = [
-            make_article(title=f"T{i}", url=f"https://example.com/t{i}") for i in range(3)
+            make_article(title=f"T{i}", url=f"https://example.com/t{i}", content=f"Tech content {i}.")
+            for i in range(3)
         ] + [
-            make_article(title=f"S{i}", url=f"https://example.com/s{i}") for i in range(3)
+            make_article(title=f"S{i}", url=f"https://example.com/s{i}", content=f"Sports content {i}.")
+            for i in range(3)
         ]
         set_sequence(fake_llm, ["Tech", "Tech", "Tech", "Sports", "Sports", "Sports"])
 
@@ -142,7 +170,10 @@ class TestMaxItemsPerTopic:
     async def test_under_limit_all_included(self, fake_llm):
         set_payload(fake_llm, topic="Tech")
         profile = make_profile(topics=["General"], max_items=5)
-        articles = [make_article(title=f"Article {i}", url=f"https://example.com/{i}") for i in range(3)]
+        articles = [
+            make_article(title=f"Article {i}", url=f"https://example.com/{i}", content=f"Content number {i}.")
+            for i in range(3)
+        ]
 
         digest = await generate_user_digest(profile, articles)
 
@@ -153,12 +184,12 @@ class TestErrorHandling:
 
     async def test_ai_error_skips_article_not_whole_digest(self, fake_llm):
         set_payload(fake_llm, topic="Tech")
-        fail_on_call(fake_llm, call_index=1)
-        profile = make_profile(topics=["General"])
         articles = [
-            make_article(title="Bad", url="https://example.com/bad"),
-            make_article(title="Good", url="https://example.com/good"),
+            make_article(title="Bad", url="https://example.com/bad", content="This article will fail."),
+            make_article(title="Good", url="https://example.com/good", content="This article will succeed."),
         ]
+        fail_for_content(fake_llm, content_marker="This article will fail.")
+        profile = make_profile(topics=["General"])
 
         digest = await generate_user_digest(profile, articles)
 
@@ -175,14 +206,13 @@ class TestErrorHandling:
 
 
 class TestDedup:
-    # Expected to fail until dedup wiring is added to briefing_service.py.
 
     async def test_same_url_deduplicated(self, fake_llm):
         set_payload(fake_llm)
         profile = make_profile(topics=["General"])
         articles = [
-            make_article(title="Same", url="https://example.com/1"),
-            make_article(title="Same again", url="https://example.com/1"),
+            make_article(title="Same", url="https://example.com/1", content="Shared content."),
+            make_article(title="Same again", url="https://example.com/1", content="Shared content."),
         ]
 
         digest = await generate_user_digest(profile, articles)
@@ -201,6 +231,18 @@ class TestDedup:
 
         assert len(digest.items) == 1
 
+    async def test_distinct_content_not_deduplicated(self, fake_llm):
+        set_payload(fake_llm)
+        profile = make_profile(topics=["General"])
+        articles = [
+            make_article(title="A", content="Completely different story about cats.", url="https://example.com/1"),
+            make_article(title="B", content="Totally unrelated report on economics.", url="https://example.com/2"),
+        ]
+
+        digest = await generate_user_digest(profile, articles)
+
+        assert len(digest.items) == 2
+
 
 class TestDigestMetadata:
 
@@ -216,8 +258,8 @@ class TestDigestMetadata:
         set_payload(fake_llm)
         profile = make_profile()
 
-        before = datetime.utcnow()
+        before = datetime.now(timezone.utc)
         digest = await generate_user_digest(profile, [make_article()])
-        after = datetime.utcnow()
+        after = datetime.now(timezone.utc)
 
-        assert before <= digest.generated_at.replace(tzinfo=None) <= after
+        assert before <= digest.generated_at <= after
