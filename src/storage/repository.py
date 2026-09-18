@@ -16,7 +16,8 @@ class UserProfile(BaseModel):
         return cls(user = data.get("user",''), preferred_topics = data.get("preferred_topics",[]), excluded_sources = data.get("excluded_sources",[]), max_items_per_topic = data.get("max_items_per_topic",3))
     def __str__(self):
         return f"Name:{self.user}\n Preferred Topics:{self.preferred_topics}\n Excluded sources:{self.excluded_sources}\n"
-
+    def __bool__(self) -> bool:
+        return bool(self.user and self.preferred_topics)
     
 class JSONUserRepo:
 
@@ -56,8 +57,8 @@ class JSONUserRepo:
         return UserProfile.from_dict(user_data)
     
     async def save_profile(self,profile:UserProfile):
-        if profile.user =='':
-            raise ValueError("User name cannot be empty")
+        if not bool(profile):
+            raise ValueError("Invalid user profile: missing required fields.")
         with open(self.file_path,'r') as f:
             data = json.load(f)
         if "user" in data and isinstance(data["user"], str):
