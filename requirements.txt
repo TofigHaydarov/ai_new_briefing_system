@@ -8,6 +8,7 @@ pydantic==2.13.5
 # Default per TOPIC.md: Anthropic (LLM) + OpenAI (embeddings)
 anthropic==0.64.0
 openai==1.99.9
+google-genai==2.24.0
 # Gemini is optional (adds image size). Enable only if EMBEDDING_PROVIDER=gemini:
 # google-genai==X.Y.Z   (check the latest with: pip index versions google-genai)
  
@@ -18,4 +19,4 @@ beautifulsoup4==4.13.4
 tenacity==9.1.2
 pydantic-settings==2.10.1
 APScheduler==3.11.0
-typer>=0.27.0
+typer==0.27.0
