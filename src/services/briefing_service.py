@@ -43,7 +43,12 @@ async def generate_user_digest(
             continue
             
         try:
-            labeled_summary = await asyncio.to_thread(AIService.safe_summarize, article)
+            # Uses the semaphore-gated async entry point instead of a bare
+            # asyncio.to_thread call, so LLM calls across all articles (and
+            # all concurrently-processed users) are throttled to
+            # AIService._llm_semaphore's limit instead of firing unbounded
+            # and blowing through the provider's requests-per-minute quota.
+            labeled_summary = await AIService.safe_summarize_async(article)
         except AIIntegrationError as err:
             logger.warning(f"Failed to summarize article '{article.title}': {err}")
             continue
