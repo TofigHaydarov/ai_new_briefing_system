@@ -2,7 +2,10 @@ import json
 from pathlib import Path
 from typing import List, Optional
 from pydantic import BaseModel, Field
-import asyncio
+import logging
+
+logger = logging.getLogger(__name__)
+
 class UserProfile(BaseModel):
     user: str
     preferred_topics: List[str] = Field(default_factory=list)
@@ -40,7 +43,7 @@ class JSONUserRepo:
             try:
                 data = json.load(f)
             except Exception:
-                print("Failed to load json")
+                logger.exception("Failed to load profiles from %s", self.file_path)
                 return
         if not (user in data):
             return False
@@ -57,7 +60,7 @@ class JSONUserRepo:
         return UserProfile.from_dict(user_data)
     
     async def save_profile(self,profile:UserProfile):
-        if not bool(profile):
+        if not profile.user.strip():
             raise ValueError("Invalid user profile: missing required fields.")
         with open(self.file_path,'r') as f:
             data = json.load(f)
