@@ -24,8 +24,8 @@ class Settings(BaseSettings):
     DATABASE_URL: str = Field(default="postgresql+asyncpg://postgres:dev@localhost:5432/newsbrief")
     DIGESTS_DIR: Path = Field(default=PROJECT_ROOT / "digests")
     DEDUP_NEAR_DUPLICATE_THRESHOLD: float = Field(default=0.70)
-    FETCH_TIMEOUT_SECONDS: int = Field(default=15)
-    MAX_PARALLEL_FETCHES: int = Field(default=8)
+    MAX_PARALLEL_FETCHES: int = Field(default=5, ge=1)
+    FETCH_TIMEOUT_SECONDS: int = Field(default=10, ge=1)
 
     # Backward compatibility paths if needed
     JSON_STORAGE_PATH: Path = Field(default=PROJECT_ROOT / "data" / "user_profile.json")

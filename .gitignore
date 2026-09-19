@@ -24,3 +24,8 @@ data/downloaded/
 .idea/
 .DS_Store
 Thumbs.db
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.ruff_cache/

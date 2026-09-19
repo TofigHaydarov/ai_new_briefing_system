@@ -1,20 +1,21 @@
 .git
 .github
-.gitignore
-.env
-.env.*
-!.env.example
+.venv
+venv
 __pycache__/
 *.pyc
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
+.pytest_cache
+.mypy_cache
+.ruff_cache
 .coverage
-htmlcov/
-venv/
-.venv/
+coverage.xml
+
+# Secrets and generated output never go into the image.
+.env
+digests/
+
+# Not needed at runtime.
 tests/
 docs/
 report/
-digests/
 artefacts/
