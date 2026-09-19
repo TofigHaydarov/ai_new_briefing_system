@@ -2,10 +2,14 @@ import asyncio
 import time
 import aiohttp
 import logging
+import sys
 from src.concurrency.pipeline import safe_fetch, run_ingestion
 
 # Suppress detailed logs during benchmarking to keep output clean
 logging.basicConfig(level=logging.ERROR)
+
+def out(message: str) -> None:
+    sys.stdout.write(message + "\n")
 
 # Define the 5 official RSS feeds from data/rss_feeds.txt and 2 HTML sources for testing
 TEST_SOURCES = [
@@ -14,8 +18,8 @@ TEST_SOURCES = [
     {"url": "https://www.theguardian.com/world/rss", "type": "rss"},
     {"url": "https://feeds.npr.org/1001/rss.xml", "type": "rss"},
     {"url": "https://feeds.arstechnica.com/arstechnica/index/", "type": "rss"},
-    {"url": "https://en.wikipedia.org/wiki/Software_engineering", "type": "html"},
-    {"url": "https://en.wikipedia.org/wiki/Artificial_intelligence", "type": "html"},
+    {"url": "https://example.com", "type": "html"},
+    {"url": "https://www.iana.org/help/example-domains", "type": "html"},
 ]
 
 async def run_sequential(sources: list[dict]) -> list[dict]:
@@ -35,34 +39,34 @@ async def run_sequential(sources: list[dict]) -> list[dict]:
     return all_articles
 
 async def main():
-    print("Starting Benchmark: Sequential vs Concurrent Ingestion...\n")
+    out("Starting Benchmark: Sequential vs Concurrent Ingestion...\n")
     
     # 1. Run and measure sequential fetching
-    print("Running sequential fetch (one by one)...")
+    out("Running sequential fetch (one by one)...")
     start_seq = time.perf_counter()
     await run_sequential(TEST_SOURCES)
     end_seq = time.perf_counter()
     seq_time = end_seq - start_seq
-    print(f"Sequential Time: {seq_time:.2f} seconds\n")
+    out(f"Sequential Time: {seq_time:.2f} seconds\n")
 
     # 2. Run and measure concurrent fetching
-    print("Running concurrent fetch (asyncio.gather)...")
+    out("Running concurrent fetch (asyncio.gather)...")
     start_conc = time.perf_counter()
     await run_ingestion(TEST_SOURCES)
     end_conc = time.perf_counter()
     conc_time = end_conc - start_conc
-    print(f"Concurrent Time: {conc_time:.2f} seconds\n")
+    out(f"Concurrent Time: {conc_time:.2f} seconds\n")
 
     # 3. Calculate speedup and generate README markdown
     speedup = seq_time / conc_time if conc_time > 0 else 0
     
-    print("=== COPY THE FOLLOWING TEXT TO README.md ===")
-    print("### Concurrency Benchmark")
-    print(f"- **Sequential Execution Time:** {seq_time:.2f} seconds")
-    print(f"- **Concurrent Execution Time:** {conc_time:.2f} seconds")
-    print(f"- **Performance Gain:** {speedup:.2f}x faster using `asyncio` and `aiohttp`")
-    print("- **Command to reproduce:** `python -m src.concurrency.benchmark`")
-    print("============================================")
+    out("=== COPY THE FOLLOWING TEXT TO README.md ===")
+    out("### Concurrency Benchmark")
+    out(f"- **Sequential Execution Time:** {seq_time:.2f} seconds")
+    out(f"- **Concurrent Execution Time:** {conc_time:.2f} seconds")
+    out(f"- **Performance Gain:** {speedup:.2f}x faster using `asyncio` and `aiohttp`")
+    out("- **Command to reproduce:** `python -m src.concurrency.benchmark`")
+    out("============================================")
 
 if __name__ == "__main__":
     asyncio.run(main())
