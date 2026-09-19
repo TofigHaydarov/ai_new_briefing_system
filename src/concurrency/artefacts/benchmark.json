@@ -1,0 +1,47 @@
+{
+  "sources": 7,
+  "runs": 5,
+  "concurrency_limit": 5,
+  "sequential": {
+    "times_s": [
+      1.971,
+      1.813,
+      1.922,
+      2.007,
+      1.768
+    ],
+    "median_s": 1.922,
+    "min_s": 1.768,
+    "max_s": 2.007,
+    "articles_per_run": [
+      152,
+      152,
+      152,
+      152,
+      152
+    ]
+  },
+  "concurrent": {
+    "times_s": [
+      0.644,
+      0.686,
+      0.664,
+      0.66,
+      0.669
+    ],
+    "median_s": 0.664,
+    "min_s": 0.644,
+    "max_s": 0.686,
+    "articles_per_run": [
+      152,
+      152,
+      152,
+      152,
+      152
+    ]
+  },
+  "speedup": 2.89,
+  "python": "3.12.10",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "timestamp": "2026-09-19T03:36:01.611169+00:00"
+}
