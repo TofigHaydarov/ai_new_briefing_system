@@ -18,8 +18,8 @@ TEST_SOURCES = [
     {"url": "https://www.theguardian.com/world/rss", "type": "rss"},
     {"url": "https://feeds.npr.org/1001/rss.xml", "type": "rss"},
     {"url": "https://feeds.arstechnica.com/arstechnica/index/", "type": "rss"},
-    {"url": "https://example.com", "type": "html"},
-    {"url": "https://www.iana.org/help/example-domains", "type": "html"},
+    {"url": "https://news.ycombinator.com/", "type": "html"},
+    {"url": "https://lobste.rs/", "type": "html"},
 ]
 
 async def run_sequential(sources: list[dict]) -> list[dict]:
