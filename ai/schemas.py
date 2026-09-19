@@ -49,6 +49,7 @@ LABELED_SUMMARY_SCHEMA: dict[str, Any] = {
 }
 
 
+
 class Article(BaseModel):
     """A raw article ingested from a feed or a scrape.
 
