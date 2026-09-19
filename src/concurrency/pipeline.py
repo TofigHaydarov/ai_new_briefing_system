@@ -9,11 +9,13 @@ import aiohttp
 import feedparser
 from bs4 import BeautifulSoup
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
-
+from src.config import settings
+# Configure logging for the pipeline
 logger = logging.getLogger(__name__)
 
-CONCURRENCY_LIMIT = int(os.environ.get("MAX_CONCURRENCY", "5"))
-REQUEST_TIMEOUT = 10  # seconds
+# Concurrency control and timeouts (configurable via .env)
+CONCURRENCY_LIMIT = settings.MAX_PARALLEL_FETCHES
+REQUEST_TIMEOUT = settings.FETCH_TIMEOUT_SECONDS
 
 # Retry strategy: up to 3 attempts, exponential backoff (1s to 10s)
 # Triggers only on client or timeout errors.
