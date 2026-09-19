@@ -17,24 +17,43 @@ The AI layer (`ai/`) is provided by the instructors and is used unchanged. Every
 
 ```
 news-briefing-project/
-├── ai/                  # provided AI module (never modified)
+├── ai/                          # provided AI module (never modified)
 ├── src/
-│   ├── cli.py           # command line entry point
-│   ├── config.py        # typed settings read from the environment
-│   ├── scheduler.py     # optional scheduled runs
-│   ├── concurrency/     # concurrent ingestion (pipeline.py)
-│   ├── core/            # dedup wiring
-│   ├── services/        # AI service (retries, caching), briefing service
-│   └── storage/         # JSON user repository
-├── tests/               # offline tests, including the provided smoke tests
-├── data/                # sample RSS list, HTML pages, user profile
-├── digests/             # generated Markdown digests
-├── artefacts/           # benchmark results
-├── docs/                # architecture notes
-├── report/report.pdf    # technical report
+│   ├── cli.py                   # command line entry point (run-daily)
+│   ├── config.py                # typed settings read from the environment
+│   ├── scheduler.py             # optional scheduled runs
+│   ├── concurrency/
+│   │   ├── pipeline.py          # concurrent RSS and HTML ingestion
+│   │   └── benchmark.py         # sequential vs concurrent benchmark
+│   ├── core/
+│   │   ├── dedup.py             # two-stage deduplication wiring
+│   │   └── digest_builder.py    # Markdown digest output
+│   ├── services/
+│   │   ├── ai_service.py        # retries, caching and rate limiting around ai.*
+│   │   └── briefing_service.py  # summarizes articles and assembles a user's digest
+│   └── storage/
+│       └── repository.py        # JSON user repository
+├── tests/                       # all offline tests
+│   ├── conftest.py              # shared fixtures and fakes
+│   ├── helpers.py
+│   └── test_*.py                # one file per module, plus the provided smoke tests
+├── data/
+│   ├── user_profile.json        # user profiles (preferred topics, excluded sources)
+│   ├── rss_feeds.txt            # RSS feed list
+│   └── html_samples/            # sample pages for the offline demo
+├── digests/                     # generated Markdown digests
+├── artefacts/                   # benchmark results
+├── docs/                        # architecture notes
+├── report/report.pdf            # technical report
+├── .github/workflows/ci.yml     # CI pipeline
+├── demo_ai.py                   # provided offline demo
 ├── Dockerfile
-├── requirements.txt     # every dependency pinned
-└── .env.example         # every variable the app reads
+├── .dockerignore
+├── requirements.txt             # every dependency pinned
+├── pytest.ini
+├── .env.example                 # every variable the app reads
+├── .gitignore
+└── README.md
 ```
 
 ## Setup
