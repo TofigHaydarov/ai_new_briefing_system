@@ -1,16 +1,11 @@
 name: CI
 
-# Runs on every push to main and on every pull request targeting main.
-# This satisfies the "CI bonus" requirement in the project brief:
-# lint -> type-check -> test (with coverage gate) -> docker build.
+# Runs on every push to main and on every pull request targeting main:
+# lint -> type-check -> test (coverage gate) -> docker build.
 #
-# SOFT-LAUNCH MODE: src/ is still being written by teammates, so every
-# step below has `continue-on-error: true` for now — CI will run and
-# show you what's red/green, but a failing step will NOT block a PR from
-# merging yet. Once most modules exist and tests are passing for real,
-# remove the `continue-on-error: true` lines (search for "TODO: tighten")
-# and turn on branch protection (Settings > Branches > Require status
-# checks to pass before merging) to actually enforce this.
+# The test and docker-build jobs are blocking: a failure there turns the
+# PR red. Ruff and mypy report their findings in the job log without
+# blocking a merge.
 on:
   push:
     branches: [main]
@@ -35,16 +30,15 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install ruff mypy
+          pip install ruff mypy==2.3.1
 
-      # Adjust the target paths (src, tests) if your layout differs.
       - name: Run ruff (lint)
         run: ruff check src tests
-        continue-on-error: true  # TODO: tighten — remove once src/ is stable
+        continue-on-error: true  # informational, does not block merges
 
       - name: Run mypy (type-check)
-        run: mypy src
-        continue-on-error: true  # TODO: tighten — remove once type hints are in place everywhere
+        run: mypy --ignore-missing-imports --explicit-package-bases --follow-imports=silent src
+        continue-on-error: true  # informational, does not block merges
 
   test:
     name: Test with coverage
@@ -64,15 +58,14 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pytest pytest-cov pytest-asyncio
+          pip install pytest pytest-cov pytest-asyncio respx
 
-      # --cov-fail-under=60 makes the job fail (red X on the PR) if
-      # coverage drops below the 60% threshold the brief requires.
+      # --cov-fail-under=60 fails the job if coverage drops below the
+      # 60% threshold the brief requires. All tests run offline.
       - name: Run tests with coverage
         env:
-          # Dummy values so config.py / pydantic-settings can load without
-          # real secrets. Tests must never call real providers anyway —
-          # everything should be mocked via conftest.py fakes.
+          # Dummy values so config.py can load without real secrets.
+          # Tests never call real providers; everything is mocked.
           LLM_PROVIDER: anthropic
           LLM_MODEL: claude-sonnet-4-6
           ANTHROPIC_API_KEY: test-key-not-real
@@ -80,8 +73,7 @@ jobs:
           EMBEDDING_MODEL: text-embedding-3-small
           OPENAI_API_KEY: test-key-not-real
         run: |
-          pytest --cov=src --cov-report=term-missing --cov-report=xml --cov-fail-under=60
-        continue-on-error: true  # TODO: tighten — remove once modules + tests are passing for real
+          python -m pytest --cov=src --cov-report=term-missing --cov-report=xml --cov-fail-under=60
 
       - name: Upload coverage report
         uses: actions/upload-artifact@v4
@@ -100,4 +92,3 @@ jobs:
 
       - name: Build Docker image
         run: docker build -t newsbrief:ci .
-        continue-on-error: true  # TODO: tighten — remove once Dockerfile exists and builds cleanly
