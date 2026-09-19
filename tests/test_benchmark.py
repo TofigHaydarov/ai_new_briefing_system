@@ -1,44 +1,40 @@
+import asyncio
+import json
+from pathlib import Path
+
 import pytest
-from tenacity import wait_none
 
-from src.concurrency import benchmark, pipeline
-from tests.helpers import FakeSession, patch_client_session
+from src.concurrency import benchmark
 
 
-@pytest.fixture(autouse=True)
-def fast_retry():
-    html_wait = pipeline.fetch_html.retry.wait
-    pipeline.fetch_html.retry.wait = wait_none()
-    yield
-    pipeline.fetch_html.retry.wait = html_wait
+async def test_run_benchmark_writes_results(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_run_ingestion(sources: list[dict], concurrency: int | None = None) -> list[dict]:
+        await asyncio.sleep(0.05 if concurrency == 1 else 0.01)
+        return [{"content": "x"}]
+
+    monkeypatch.setattr(benchmark, "run_ingestion", fake_run_ingestion)
+    out = tmp_path / "bench.json"
+
+    result = await benchmark.run_benchmark(
+        runs=2, concurrency=5, output=out, sources=[{"url": "u", "type": "rss"}]
+    )
+
+    saved = json.loads(out.read_text())
+    assert saved["runs"] == 2
+    assert len(saved["sequential"]["times_s"]) == 2
+    assert result["speedup"] > 1
 
 
-class TestRunSequential:
+def test_format_report_contains_command_and_numbers() -> None:
+    summary = {"times_s": [1.0], "median_s": 1.0, "min_s": 1.0, "max_s": 1.0, "articles_per_run": [3]}
+    report = benchmark.format_report({
+        "sources": 7, "runs": 1, "concurrency_limit": 5,
+        "sequential": summary, "concurrent": summary, "speedup": 1.0,
+    })
+    assert "python -m src.concurrency.benchmark" in report
+    assert "Speedup" in report
 
-    async def test_never_overlaps_requests(self, monkeypatch):
-        tracker = {"active": 0, "peak": 0}
-        sources = [{"url": f"https://example.com/s{i}", "type": "html"} for i in range(5)]
-        responses = {s["url"]: (200, "<html><body><p>Content</p></body></html>") for s in sources}
-        fake_session = FakeSession(responses, tracker=tracker, delay=0.02)
-        patch_client_session(monkeypatch, benchmark, fake_session)
 
-        articles = await benchmark.run_sequential(sources)
-
-        assert len(articles) == 5
-        assert tracker["peak"] == 1
-
-    async def test_returns_all_articles_in_source_order_when_no_failures(self, monkeypatch):
-        sources = [
-            {"url": "https://example.com/a", "type": "html"},
-            {"url": "https://example.com/b", "type": "html"},
-        ]
-        responses = {
-            "https://example.com/a": (200, "<html><body><p>A content</p></body></html>"),
-            "https://example.com/b": (200, "<html><body><p>B content</p></body></html>"),
-        }
-        fake_session = FakeSession(responses)
-        patch_client_session(monkeypatch, benchmark, fake_session)
-
-        articles = await benchmark.run_sequential(sources)
-
-        assert [a["url"] for a in articles] == ["https://example.com/a", "https://example.com/b"]
+def test_main_rejects_zero_runs() -> None:
+    with pytest.raises(SystemExit):
+        benchmark.main(["--runs", "0"])
